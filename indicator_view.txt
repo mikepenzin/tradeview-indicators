@@ -1,0 +1,140 @@
+//@version=6
+indicator("ROMAN INDICATOR", shorttitle = 'RV', overlay = true)
+
+// === User Inputs
+yPos        = input.string("Top", "Watermark Vertical Location", options = ["Top", "Middle", "Bottom"], inline = '1')
+xPos        = input.string("Left", "Watermark Horizontal Location", options = ["Left", "Center", "Right"], inline = '1')
+offsetY     = input.int(40, "Vertical Offset", minval=0, maxval=100)
+txtCol      = input.color(color.rgb(164, 167, 180,30), 'Text Color', inline = '2')
+txtSize     = input.string('Huge', 'Text Size', options = ['Huge', 'Large', 'Normal', 'Small'], inline = '2')
+symTime     = input.bool(true, 'Symbol & Time Frame')
+compName    = input.bool(true, 'Company Name')
+indSec      = input.bool(true, 'Industry & Sector')
+mCap        = input.bool(true, 'Show Market Cap')
+showATR     = input.bool(false, "Show ATR (14-Day) & %")
+showMA150   = input.bool(true, "Show Moving Average Position")
+maPeriod    = input.int(150, "Moving Average Period", minval=1, maxval=500)
+showRemainingDaysInput = input.bool(true, "Show Days Until Earnings")
+showEarningsRow = input.bool(true, "Show Earnings Info")
+atrRedThreshold = input.float(6.0, "Red Threshold (%)", minval=0)
+atrYellowThreshold = input.float(3.0, "Yellow Threshold (%)", minval=0)
+showStopLoss = input.bool(true, "Show Stop Loss (Close - ATR)")
+stopSourceOption = input.string("Today", "Stop Loss Price Source", options = ["Today", "Yesterday", "2 Days Ago", "Auto"])
+atrMultiplier = input.float(1.0, "ATR Multiplier", minval=0.1, step=0.1)
+volumeLookback = input.string("1 Day", "Volume Change Period", options=["1 Day", "3 Days", "1 Week", "1 Month"])
+
+// === Font Size Mapping
+sizer = switch txtSize
+    'Huge' => size.huge
+    'Large' => size.large
+    'Normal' => size.normal
+    'Small' => size.small
+
+// === Market Cap Calculation
+rounder(float val) =>
+    if val >= 1e12
+        math.round(math.abs(val / 1e12), 2)
+    else if val >= 1e9
+        math.round(math.abs(val / 1e9), 2)
+    else
+        math.round(math.abs(val / 1e6), 2)
+
+// === Data
+sector  = syminfo.sector
+ind     = syminfo.industry
+tick    = syminfo.ticker
+tf      = timeframe.period
+name    = syminfo.description
+tso     = syminfo.shares_outstanding_total
+marketcap = tso * close 
+marCap    = marketcap > 1e12 ? 'T' : marketcap > 1e9 ? 'B' : 'M'
+
+tf := tf == 'D' ? '1D' : tf == 'W' ? '1W' : tf == '60' ? '1H' :
+      tf == '120' ? '2H' : tf == '180' ? '3H' : tf == '240' ? '4H' : tf
+
+// === ATR
+atrValue = ta.atr(14)
+atrPercent = (atrValue / close) * 100
+atrEmoji = atrPercent >= atrRedThreshold ? "🔴" : atrPercent >= atrYellowThreshold ? "🟡" : "🟢"
+
+// === Stop Loss
+manualBase = stopSourceOption == "Yesterday" ? close[1] : stopSourceOption == "2 Days Ago" ? close[2] : close
+manualSL = manualBase - (atrValue * atrMultiplier)
+autoSL = math.min(close - atrValue, close[1] - atrValue[1], close[2] - atrValue[2])
+stopLoss = stopSourceOption == "Auto" ? autoSL : manualSL
+distancePercent = ((close - stopLoss) / close) * 100
+slEmoji = distancePercent > 5 ? "🟢" : distancePercent > 2 ? "🟡" : "🔴"
+
+// === MA
+customMA = ta.sma(close, maPeriod)
+maStatus = close > customMA ? "Above " + str.tostring(maPeriod) + " MA 🟢" : "Below " + str.tostring(maPeriod) + " MA 🔴"
+
+// === Earnings
+earningsTime = earnings.future_time
+earningsDateStr = ""
+if not na(earningsTime) and showRemainingDaysInput
+    todayUTC = timestamp(year(timenow), month(timenow), dayofmonth(timenow), 0, 0)
+    earningsUTC = timestamp(year(earningsTime), month(earningsTime), dayofmonth(earningsTime), 0, 0)
+    timediff = math.max(int(math.round((earningsUTC - todayUTC) / 86400000)), 0)
+    earningsDateStr := str.tostring(timediff) + " days remaining"
+
+// === RSI
+rsiValue = ta.rsi(close, 14)
+rsiEmoji = rsiValue > 70 ? "🔴" : rsiValue < 30 ? "🔴" : "🟢"
+rsiTrend = rsiValue > rsiValue[1] ? "⬆️" : rsiValue < rsiValue[1] ? "⬇️" : "⏸️"
+
+// === Volume Change %
+volLookbackBars = volumeLookback == "3 Days" ? 3 : volumeLookback == "1 Week" ? 5 : volumeLookback == "1 Month" ? 21 : 1
+volChange = volume[volLookbackBars] == 0 ? na : ((volume - volume[volLookbackBars]) / volume[volLookbackBars]) * 100
+volEmoji = volChange > 0 ? "⬆️" : volChange < 0 ? "⬇️" : "⏸️"
+
+// === Stop Loss Label
+var label slLabel = na
+if showStopLoss and barstate.islast
+    slLabel := label.new(x=bar_index + 1, y=stopLoss, text=(close <= stopLoss ? "SELL" : str.tostring(stopLoss, "#.##")), style=label.style_label_left, color=color.new(color.red, 60), textcolor=color.white, size=size.small)
+
+// === Alert Condition
+alertcondition(showStopLoss and close <= stopLoss, title="Price Crossed Stop Loss", message="⚠️ Price has crossed below Stop Loss!")
+
+// === Table Display
+posTable = str.lower(yPos) + '_' + str.lower(xPos)
+var table sec = table.new(posTable, 1, 12, color.new(color.white,100), color.new(color.white,100), 1, color.new(color.white,100), 1)
+
+if barstate.islast
+    rowIndex = 0
+    table.cell(sec, 0, rowIndex, "")
+    rowIndex += 1
+
+    if compName
+        table.cell(sec, 0, rowIndex, mCap ? name + ' (' + str.tostring(nz(rounder(marketcap))) + marCap + ')' : name, text_color = txtCol, text_size = sizer, text_halign=text.align_left)
+        rowIndex += 1
+
+    if symTime
+        table.cell(sec, 0, rowIndex, tick + ', ' + tf, text_color = txtCol, text_size = sizer, text_halign=text.align_left)
+        rowIndex += 1
+
+    if indSec
+        table.cell(sec, 0, rowIndex, not na(sector) ? sector + ', ' + ind : '', text_color = txtCol, text_size = sizer, text_halign=text.align_left)
+        rowIndex += 1
+
+    if showATR
+        table.cell(sec, 0, rowIndex, "ATR (14): " + str.tostring(atrValue, "#.##") + " (" + str.tostring(atrPercent, "#.##") + "%) " + atrEmoji, text_color = txtCol, text_size = sizer, text_halign=text.align_left)
+        rowIndex += 1
+
+    if showMA150
+        table.cell(sec, 0, rowIndex, maStatus, text_color = txtCol, text_size = sizer, text_halign=text.align_left)
+        rowIndex += 1
+
+    if showStopLoss
+        table.cell(sec, 0, rowIndex, "Stop Loss: " + str.tostring(stopLoss, "#.##") + " " + slEmoji, text_color = txtCol, text_size = sizer, text_halign=text.align_left)
+        rowIndex += 1
+
+    if showEarningsRow and earningsDateStr != ""
+        table.cell(sec, 0, rowIndex, "Earnings: " + earningsDateStr, text_color = txtCol, text_size = sizer, text_halign=text.align_left)
+        rowIndex += 1
+
+    table.cell(sec, 0, rowIndex, "RSI (14): " + str.tostring(rsiValue, "#.##") + " " + rsiEmoji + " " + rsiTrend, text_color = txtCol, text_size = sizer, text_halign=text.align_left)
+    rowIndex += 1
+
+    table.cell(sec, 0, rowIndex, "Volume Δ: " + str.tostring(volChange, "#.##") + "% " + volEmoji, text_color = txtCol, text_size = sizer, text_halign=text.align_left)
+    rowIndex += 1
