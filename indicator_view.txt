@@ -1,4 +1,4 @@
-//@version=6
+//@version=5
 indicator("ROMAN INDICATOR", shorttitle = 'RV', overlay = true)
 
 // === User Inputs
@@ -99,13 +99,52 @@ volTrendScore = volume > volume[1] ? volWeight : 0
 totalScore = maTrendScore + rsiTrendScore + volTrendScore
 trendSummary = "📈 Trend: " + (totalScore >= 0.6 ? "Uptrend 🟢" : "Downtrend 🔴")
 
+// === Fibonacci Levels
+fibLength = input.int(50, "Fibonacci Swing Length", minval=1)
+
+swingHigh = ta.highest(high, fibLength)
+swingLow = ta.lowest(low, fibLength)
+fibRange = swingHigh - swingLow
+
+fib236 = swingHigh - fibRange * 0.236
+fib382 = swingHigh - fibRange * 0.382
+fib618 = swingHigh - fibRange * 0.618
+fib500 = swingHigh - fibRange * 0.5
+fib786 = swingHigh - fibRange * 0.786
+fib1272 = swingHigh + fibRange * 1.272
+fib1618 = swingHigh + fibRange * 1.618
+
 // === Stop Loss Label
 var label slLabel = na
 if showStopLoss and barstate.islast
     slLabel := label.new(x=bar_index + 1, y=stopLoss, text=(close <= stopLoss ? "SELL" : str.tostring(stopLoss, "#.##")), style=label.style_label_left, color=color.new(color.red, 60), textcolor=color.white, size=size.small)
 
-// === Alert Condition
+// === Alert Conditions
 alertcondition(showStopLoss and close <= stopLoss, title="Price Crossed Stop Loss", message="⚠️ Price has crossed below Stop Loss!")
+alertcondition(close <= fib500 and close >= fib618, title="Buy Zone Entered", message="📉 Entered BUY ZONE (Fib 0.5–0.618)")
+alertcondition(close <= fib618 and close >= fib786, title="Deep Buy Zone Entered", message="🚨 Entered DEEP BUY ZONE (Fib 0.618–0.786)")
+
+// === Fibonacci Boxes
+leftBox = bar_index + ta.highestbars(high, fibLength)
+rightBox = bar_index
+
+var box buyZoneBox = na
+var box deepBuyBox = na
+
+if barstate.islast
+    if not na(buyZoneBox)
+        box.delete(buyZoneBox)
+    if not na(deepBuyBox)
+        box.delete(deepBuyBox)
+
+    buyZoneBox := box.new(left=leftBox, right=rightBox, top=fib500, bottom=fib618, bgcolor=color.new(color.green, 85), border_color=color.new(color.green, 100))
+    deepBuyBox := box.new(left=leftBox, right=rightBox, top=fib618, bottom=fib786, bgcolor=color.new(color.red, 85), border_color=color.new(color.red, 100))
+
+    label.new(rightBox + 1, fib500, "Fib 0.5", style=label.style_label_left, textcolor=color.white, size=size.small, color=color.new(color.gray, 70))
+    label.new(rightBox + 1, fib618, "BUY ZONE\nFib 0.618", style=label.style_label_left, textcolor=color.white, size=size.small, color=color.new(color.green, 70))
+    label.new(rightBox + 1, fib786, "DEEP BUY\nFib 0.786", style=label.style_label_left, textcolor=color.white, size=size.small, color=color.new(color.red, 70))
+    label.new(rightBox + 1, fib1272, "SELL ZONE\nFib 1.272", style=label.style_label_left, textcolor=color.white, size=size.small, color=color.new(color.orange, 70))
+    label.new(rightBox + 1, fib1618, "TAKE PROFIT\nFib 1.618", style=label.style_label_left, textcolor=color.white, size=size.small, color=color.new(color.red, 70))
 
 // === Table Display
 posTable = str.lower(yPos) + '_' + str.lower(xPos)
