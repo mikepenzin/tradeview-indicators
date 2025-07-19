@@ -2,11 +2,11 @@
 indicator("ROMAN INDICATOR", shorttitle = 'RV', overlay = true)
 
 // === User Inputs
-yPos        = input.string("Top", "Watermark Vertical Location", options = ["Top", "Middle", "Bottom"], inline = '1')
-xPos        = input.string("Left", "Watermark Horizontal Location", options = ["Left", "Center", "Right"], inline = '1')
+yPos        = input.string("Bottom", "Watermark Vertical Location", options = ["Top", "Middle", "Bottom"], inline = '1')
+xPos        = input.string("Right", "Watermark Horizontal Location", options = ["Left", "Center", "Right"], inline = '1')
 offsetY     = input.int(40, "Vertical Offset", minval=0, maxval=100)
-txtCol      = input.color(color.rgb(164, 167, 180,30), 'Text Color', inline = '2')
-txtSize     = input.string('Huge', 'Text Size', options = ['Huge', 'Large', 'Normal', 'Small'], inline = '2')
+txtCol      = input.color(color.rgb(255,255,255), 'Text Color', inline = '2')
+txtSize     = input.string('Normal', 'Text Size', options = ['Huge', 'Large', 'Normal', 'Small'], inline = '2')
 symTime     = input.bool(true, 'Symbol & Time Frame')
 compName    = input.bool(true, 'Company Name')
 indSec      = input.bool(true, 'Industry & Sector')
