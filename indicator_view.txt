@@ -22,6 +22,9 @@ showStopLoss = input.bool(true, "Show Stop Loss (Close - ATR)")
 stopSourceOption = input.string("Today", "Stop Loss Price Source", options = ["Today", "Yesterday", "2 Days Ago", "Auto"])
 atrMultiplier = input.float(1.0, "ATR Multiplier", minval=0.1, step=0.1)
 volumeLookback = input.string("1 Day", "Volume Change Period", options=["1 Day", "3 Days", "1 Week", "1 Month"])
+maWeight     = input.float(0.6, "Trend calculation weight: MA", minval=0, maxval=1, step=0.1)
+rsiWeight    = input.float(0.3, "Trend calculation weight: RSI", minval=0, maxval=1, step=0.1)
+volWeight    = input.float(0.1, "Trend calculation weight: Volume", minval=0, maxval=1, step=0.1)
 
 // === Font Size Mapping
 sizer = switch txtSize
@@ -88,6 +91,14 @@ volLookbackBars = volumeLookback == "3 Days" ? 3 : volumeLookback == "1 Week" ? 
 volChange = volume[volLookbackBars] == 0 ? na : ((volume - volume[volLookbackBars]) / volume[volLookbackBars]) * 100
 volEmoji = volChange > 0 ? "⬆️" : volChange < 0 ? "⬇️" : "⏸️"
 
+// === Trend Summary Row
+maTrendScore = close > customMA ? maWeight : 0
+rsiTrendScore = rsiValue > rsiValue[1] ? rsiWeight : 0
+volTrendScore = volume > volume[1] ? volWeight : 0
+
+totalScore = maTrendScore + rsiTrendScore + volTrendScore
+trendSummary = "📈 Trend: " + (totalScore >= 0.6 ? "Uptrend 🟢" : "Downtrend 🔴")
+
 // === Stop Loss Label
 var label slLabel = na
 if showStopLoss and barstate.islast
@@ -137,4 +148,7 @@ if barstate.islast
     rowIndex += 1
 
     table.cell(sec, 0, rowIndex, "Volume Δ: " + str.tostring(volChange, "#.##") + "% " + volEmoji, text_color = txtCol, text_size = sizer, text_halign=text.align_left)
+    rowIndex += 1
+
+    table.cell(sec, 0, rowIndex, trendSummary, text_color = txtCol, text_size = sizer, text_halign=text.align_left)
     rowIndex += 1
