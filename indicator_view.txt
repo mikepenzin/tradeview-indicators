@@ -27,6 +27,9 @@ maWeight     = input.float(0.6, "Trend calculation weight: MA", minval=0, maxval
 rsiWeight    = input.float(0.3, "Trend calculation weight: RSI", minval=0, maxval=1, step=0.1)
 volWeight    = input.float(0.1, "Trend calculation weight: Volume", minval=0, maxval=1, step=0.1)
 showFibonacci = input.bool(true, "Show Fibonacci Levels")
+fibLength = input.int(50, "Fibonacci Swing Length", minval=1)
+showPivotLabels = input.bool(true, "Show Pivot High/Low Labels")
+pivotStrength   = input.int(20, "Pivot Lookback Strength", minval=1)
 
 
 // === Font Size Mapping
@@ -74,6 +77,7 @@ slEmoji = distancePercent > 5 ? "🟢" : distancePercent > 2 ? "🟡" : "🔴"
 // === MA
 customMA = ta.sma(close, maPeriod)
 maStatus = close > customMA ? "Above " + str.tostring(maPeriod) + " MA 🟢" : "Below " + str.tostring(maPeriod) + " MA 🔴"
+plot(showMA150 ? customMA : na, title="MA 150", color=color.new(color.red, 0), linewidth=2, style=plot.style_line)
 
 // === Earnings
 earningsTime = earnings.future_time
@@ -103,8 +107,6 @@ totalScore = maTrendScore + rsiTrendScore + volTrendScore
 trendSummary = "📈 Trend: " + (totalScore >= 0.6 ? "Uptrend 🟢" : "Downtrend 🔴")
 
 // === Fibonacci Levels
-fibLength = input.int(50, "Fibonacci Swing Length", minval=1)
-
 swingHigh = ta.highest(high, fibLength)
 swingLow = ta.lowest(low, fibLength)
 fibRange = swingHigh - swingLow
@@ -116,6 +118,19 @@ fib500 = swingHigh - fibRange * 0.5
 fib786 = swingHigh - fibRange * 0.786
 fib1272 = swingHigh + fibRange * 1.272
 fib1618 = swingHigh + fibRange * 1.618
+
+
+// === Pivotal HL 
+ph = ta.pivothigh(high, pivotStrength, pivotStrength)
+pl = ta.pivotlow(low, pivotStrength, pivotStrength)
+
+// Show labels on chart
+if showPivotLabels
+    if not na(ph)
+        label.new(x=bar_index - pivotStrength, y=ph, text=str.tostring(ph, "#.##"), style=label.style_label_down, yloc=yloc.abovebar, color=color.new(color.white, 100), textcolor=color.white, size=size.small)
+    if not na(pl)
+        label.new(x=bar_index - pivotStrength, y=pl, text=str.tostring(pl, "#.##"), style=label.style_label_up, yloc=yloc.belowbar, color=color.new(color.white, 100), textcolor=color.white, size=size.small)
+
 
 // === Stop Loss Label
 var label slLabel = na
