@@ -1,5 +1,4 @@
-
-//@version=6
+//@version=5
 indicator("ROMAN INDICATOR", shorttitle = 'RV', overlay = true)
 
 // === User Inputs
@@ -26,11 +25,12 @@ volumeLookback = input.string("1 Day", "Volume Change Period", options=["1 Day",
 maWeight     = input.float(0.6, "Trend calculation weight: MA", minval=0, maxval=1, step=0.1)
 rsiWeight    = input.float(0.3, "Trend calculation weight: RSI", minval=0, maxval=1, step=0.1)
 volWeight    = input.float(0.1, "Trend calculation weight: Volume", minval=0, maxval=1, step=0.1)
-showFibonacci = input.bool(true, "Show Fibonacci Levels")
+showFibonacci = input.bool(true, "Show Fibonacci Zones")
+showfibonacciAdditinalLines = input.bool(true, "Show Fibonacci Lines")
 fibLength = input.int(50, "Fibonacci Swing Length", minval=1)
 showPivotLabels = input.bool(true, "Show Pivot High/Low Labels")
 pivotStrength   = input.int(20, "Pivot Lookback Strength", minval=1)
-
+showTPFib     = input.bool(true, "Show Take-Profit Levels")
 
 // === Font Size Mapping
 sizer = switch txtSize
@@ -106,21 +106,95 @@ volTrendScore = volume > volume[1] ? volWeight : 0
 totalScore = maTrendScore + rsiTrendScore + volTrendScore
 trendSummary = "📈 Trend: " + (totalScore >= 0.6 ? "Uptrend 🟢" : "Downtrend 🔴")
 
-// === Fibonacci Levels
-swingHigh = ta.highest(high, fibLength)
-swingLow = ta.lowest(low, fibLength)
-fibRange = swingHigh - swingLow
+// === Improved Fibonacci Calculation ===
 
-fib236 = swingHigh - fibRange * 0.236
-fib382 = swingHigh - fibRange * 0.382
-fib618 = swingHigh - fibRange * 0.618
-fib500 = swingHigh - fibRange * 0.5
-fib786 = swingHigh - fibRange * 0.786
-fib1272 = swingHigh + fibRange * 1.272
-fib1618 = swingHigh + fibRange * 1.618
+// Pivot detection
+pivotHigh = ta.pivothigh(high, pivotStrength, pivotStrength)
+pivotLow  = ta.pivotlow(low, pivotStrength, pivotStrength)
+
+// Track the most recent swing points
+var float lastSwingHigh = na
+var float lastSwingLow = na
+var int lastSwingHighBar = na
+var int lastSwingLowBar = na
+var string swingDirection = na
+
+// Update swing points when new pivots are found
+if not na(pivotHigh)
+    lastSwingHigh := pivotHigh
+    lastSwingHighBar := bar_index - pivotStrength
+
+if not na(pivotLow)
+    lastSwingLow := pivotLow
+    lastSwingLowBar := bar_index - pivotStrength
+
+// Determine swing direction based on most recent pivot
+if not na(lastSwingHigh) and not na(lastSwingLow)
+    if lastSwingHighBar > lastSwingLowBar
+        swingDirection := "down"  // High came after low = downtrend
+    else
+        swingDirection := "up"    // Low came after high = uptrend
+
+// Calculate Fibonacci levels
+var float fib0 = na
+var float fib236 = na
+var float fib382 = na
+var float fib500 = na
+var float fib618 = na
+var float fib786 = na
+var float fib1000 = na
+var float fib1272 = na
+var float fib1618 = na
+
+if not na(lastSwingHigh) and not na(lastSwingLow)
+    fibRange = lastSwingHigh - lastSwingLow
+    
+    if swingDirection == "down"
+        // Retracement from high to low (for potential bounce)
+        fib0 := lastSwingHigh
+        fib236 := lastSwingHigh - fibRange * 0.236
+        fib382 := lastSwingHigh - fibRange * 0.382
+        fib500 := lastSwingHigh - fibRange * 0.5
+        fib618 := lastSwingHigh - fibRange * 0.618
+        fib786 := lastSwingHigh - fibRange * 0.786
+        fib1000 := lastSwingLow
+        // Extensions below the low
+        fib1272 := lastSwingLow - fibRange * 0.272
+        fib1618 := lastSwingLow - fibRange * 0.618
+        
+    else if swingDirection == "up"
+        // Retracement from low to high (for potential pullback)
+        fib0 := lastSwingLow
+        fib236 := lastSwingLow + fibRange * 0.236
+        fib382 := lastSwingLow + fibRange * 0.382
+        fib500 := lastSwingLow + fibRange * 0.5
+        fib618 := lastSwingLow + fibRange * 0.618
+        fib786 := lastSwingLow + fibRange * 0.786
+        fib1000 := lastSwingHigh
+        // Extensions above the high
+        fib1272 := lastSwingHigh + fibRange * 0.272
+        fib1618 := lastSwingHigh + fibRange * 0.618
+
+// Plot Fibonacci levels
+showFibLines = showFibonacci and showfibonacciAdditinalLines
+
+// Plot Fibonacci levels
+plot(showFibLines ? fib236 : na, color=color.new(color.gray, 50), linewidth=1, title="Fib 23.6%")
+plot(showFibLines ? fib382 : na, color=color.new(color.blue, 50), linewidth=1, title="Fib 38.2%")
+plot(showFibLines ? fib500 : na, color=color.new(color.yellow, 50), linewidth=2, title="Fib 50%")
+plot(showFibLines ? fib618 : na, color=color.new(color.orange, 50), linewidth=2, title="Fib 61.8%")
+plot(showFibLines ? fib786 : na, color=color.new(color.red, 50), linewidth=1, title="Fib 78.6%")    
+
+// Add labels with both percentage and price
+if showFibonacci and barstate.islast and showfibonacciAdditinalLines
+    label.new(bar_index, fib236, text="23.6% (" + str.tostring(fib236, "#.##") + ")", style=label.style_label_left, color=color.new(color.gray, 80), textcolor=color.white, size=size.small)
+    label.new(bar_index, fib382, text="38.2% (" + str.tostring(fib382, "#.##") + ")", style=label.style_label_left, color=color.new(color.blue, 80), textcolor=color.white, size=size.small)
+    // label.new(bar_index, fib500, text="50.0% (" + str.tostring(fib500, "#.##") + ")", style=label.style_label_left, color=color.new(color.yellow, 80), textcolor=color.white, size=size.small)
+    // label.new(bar_index, fib618, text="61.8% (" + str.tostring(fib618, "#.##") + ")", style=label.style_label_left, color=color.new(color.orange, 80), textcolor=color.white, size=size.small)
+    // label.new(bar_index, fib786, text="78.6% (" + str.tostring(fib786, "#.##") + ")", style=label.style_label_left, color=color.new(color.red, 80), textcolor=color.white, size=size.small)
 
 
-// === Pivotal HL 
+// === Pivot Labels
 ph = ta.pivothigh(high, pivotStrength, pivotStrength)
 pl = ta.pivotlow(low, pivotStrength, pivotStrength)
 
@@ -131,39 +205,71 @@ if showPivotLabels
     if not na(pl)
         label.new(x=bar_index - pivotStrength, y=pl, text=str.tostring(pl, "#.##"), style=label.style_label_up, yloc=yloc.belowbar, color=color.new(color.white, 100), textcolor=color.white, size=size.small)
 
-
 // === Stop Loss Label
 var label slLabel = na
 if showStopLoss and barstate.islast
+    if not na(slLabel)
+        label.delete(slLabel)
     slLabel := label.new(x=bar_index + 1, y=stopLoss, text=(close <= stopLoss ? "SELL" : str.tostring(stopLoss, "#.##")), style=label.style_label_left, color=color.new(color.red, 60), textcolor=color.white, size=size.small)
+
+// === Enhanced Buy/Sell Zone boxes
+var box retraceBox1 = na
+var box retraceBox2 = na
+
+if showFibonacci and barstate.islast and not na(fib500) and not na(fib786)
+    // Clear previous boxes
+    if not na(retraceBox1)
+        box.delete(retraceBox1)
+    if not na(retraceBox2)
+        box.delete(retraceBox2)
+
+    leftBar = math.min(lastSwingHighBar, lastSwingLowBar)
+    rightBar = bar_index + 10
+    
+    if swingDirection == "down"
+        // Golden pocket (50% - 61.8%) and Deep zone (61.8% - 78.6%)
+        retraceBox1 := box.new(leftBar, fib500, rightBar, fib618, 
+                              bgcolor=color.new(color.green, 85), 
+                              border_color=color.green, border_width=1)
+        retraceBox2 := box.new(leftBar, fib618, rightBar, fib786, 
+                              bgcolor=color.new(color.red, 85), 
+                              border_color=color.red, border_width=1)
+        
+        // Labels
+        label.new(rightBar, fib500, "50% (" + str.tostring(fib500, "#.##") + ")", style=label.style_label_left, size=size.small, color=color.new(color.yellow, 70), textcolor=color.white)
+        label.new(rightBar, fib618, "61.8% BUY (" + str.tostring(fib618, "#.##") + ")", style=label.style_label_left, size=size.small, color=color.new(color.green, 70), textcolor=color.white)
+        label.new(rightBar, fib786, "78.6% DEEP (" + str.tostring(fib786, "#.##") + ")", style=label.style_label_left, size=size.small, color=color.new(color.red, 70), textcolor=color.white)
+        
+        if showTPFib
+            label.new(rightBar, fib1272, "TP 1.272", style=label.style_label_left, size=size.small, color=color.new(color.blue, 70), textcolor=color.white)
+            label.new(rightBar, fib1618, "TP 1.618", style=label.style_label_left, size=size.small, color=color.new(color.purple, 70), textcolor=color.white)
+        
+    else if swingDirection == "up"
+        // Resistance zones for uptrend retracements
+        retraceBox1 := box.new(leftBar, fib618, rightBar, fib500, 
+                              bgcolor=color.new(color.orange, 85), 
+                              border_color=color.orange, border_width=1)
+        retraceBox2 := box.new(leftBar, fib786, rightBar, fib618, 
+                              bgcolor=color.new(color.red, 85), 
+                              border_color=color.red, border_width=1)
+        
+        // Labels
+        label.new(rightBar, fib500, "50%", style=label.style_label_left, size=size.small, color=color.new(color.yellow, 70), textcolor=color.white)
+        label.new(rightBar, fib618, "61.8% SELL", style=label.style_label_left, size=size.small, color=color.new(color.orange, 70), textcolor=color.white)
+        label.new(rightBar, fib786, "78.6% SHORT", style=label.style_label_left, size=size.small, color=color.new(color.red, 70), textcolor=color.white)
+        
+        if showTPFib
+            label.new(rightBar, fib1272, "TP 1.272", style=label.style_label_left, size=size.small, color=color.new(color.blue, 70), textcolor=color.white)
+            label.new(rightBar, fib1618, "TP 1.618", style=label.style_label_left, size=size.small, color=color.new(color.purple, 70), textcolor=color.white)
 
 // === Alert Conditions
 alertcondition(showStopLoss and close <= stopLoss, title="Price Crossed Stop Loss", message="⚠️ Price has crossed below Stop Loss!")
-alertcondition(close <= fib500 and close >= fib618, title="Buy Zone Entered", message="📉 Entered BUY ZONE (Fib 0.5–0.618)")
-alertcondition(close <= fib618 and close >= fib786, title="Deep Buy Zone Entered", message="🚨 Entered DEEP BUY ZONE (Fib 0.618–0.786)")
 
-// === Fibonacci Boxes
-leftBox = bar_index + ta.highestbars(high, fibLength)
-rightBox = bar_index
-
-var box buyZoneBox = na
-var box deepBuyBox = na
-
-if showFibonacci
-    if barstate.islast
-        if not na(buyZoneBox)
-            box.delete(buyZoneBox)
-        if not na(deepBuyBox)
-            box.delete(deepBuyBox)
-
-        buyZoneBox := box.new(left=leftBox, right=rightBox, top=fib500, bottom=fib618, bgcolor=color.new(color.green, 85), border_color=color.new(color.green, 100))
-        deepBuyBox := box.new(left=leftBox, right=rightBox, top=fib618, bottom=fib786, bgcolor=color.new(color.red, 85), border_color=color.new(color.red, 100))
-
-        label.new(rightBox + 1, fib500, "Fib 0.5", style=label.style_label_left, textcolor=color.white, size=size.small, color=color.new(color.gray, 70))
-        label.new(rightBox + 1, fib618, "BUY ZONE\nFib 0.618", style=label.style_label_left, textcolor=color.white, size=size.small, color=color.new(color.green, 70))
-        label.new(rightBox + 1, fib786, "DEEP BUY\nFib 0.786", style=label.style_label_left, textcolor=color.white, size=size.small, color=color.new(color.red, 70))
-        label.new(rightBox + 1, fib1272, "SELL ZONE\nFib 1.272", style=label.style_label_left, textcolor=color.white, size=size.small, color=color.new(color.orange, 70))
-        label.new(rightBox + 1, fib1618, "TAKE PROFIT\nFib 1.618", style=label.style_label_left, textcolor=color.white, size=size.small, color=color.new(color.red, 70))
+// Corrected Fibonacci alerts
+alertcondition(showFibonacci and swingDirection == "down" and close <= fib500 and close >= fib618, title="Buy Zone Entered", message="📉 Entered BUY ZONE (Fib 0.5–0.618)")
+alertcondition(showFibonacci and swingDirection == "down" and close <= fib618 and close >= fib786, title="Deep Buy Zone", message="📉 Entered DEEP BUY ZONE (Fib 0.618–0.786)")
+alertcondition(showFibonacci and swingDirection == "up" and close >= fib618 and close <= fib500, title="Sell Zone Entered", message="📈 Entered SELL ZONE (Fib 0.618–0.5)")
+alertcondition(showFibonacci and swingDirection == "up" and close >= fib786 and close <= fib618, title="Short Zone", message="📈 Entered SHORT ZONE (Fib 0.786–0.618)")
 
 // === Table Display
 posTable = str.lower(yPos) + '_' + str.lower(xPos)
