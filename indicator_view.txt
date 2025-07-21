@@ -15,6 +15,7 @@ showATR     = input.bool(false, "Show ATR (14-Day) & %")
 showMA150   = input.bool(true, "Show Moving Average Position")
 maPeriod    = input.int(150, "Moving Average Period", minval=1, maxval=500)
 showRemainingDaysInput = input.bool(true, "Show Days Until Earnings")
+
 showEarningsRow = input.bool(true, "Show Earnings Info")
 atrRedThreshold = input.float(6.0, "Red Threshold (%)", minval=0)
 atrYellowThreshold = input.float(3.0, "Yellow Threshold (%)", minval=0)
@@ -48,6 +49,22 @@ rounder(float val) =>
     else
         math.round(math.abs(val / 1e6), 2)
 
+// Volume Difference Formatter
+volume_formatter(float vol_diff) =>
+    result = 0.0
+    suffix = ""
+    if math.abs(vol_diff) >= 1e6
+        result := math.round(vol_diff / 1e6, 2)
+        suffix := "M"
+    else if math.abs(vol_diff) >= 1e3
+        result := math.round(vol_diff / 1e3, 2)
+        suffix := "K"
+    else
+        result := math.round(vol_diff, 2)
+        suffix := ""
+    str.tostring(result, "#.##") + suffix
+
+
 // === Data
 sector  = syminfo.sector
 ind     = syminfo.industry
@@ -79,6 +96,15 @@ customMA = ta.sma(close, maPeriod)
 maStatus = close > customMA ? "Above " + str.tostring(maPeriod) + " MA 🟢" : "Below " + str.tostring(maPeriod) + " MA 🔴"
 plot(showMA150 ? customMA : na, title="MA 150", color=color.new(color.red, 0), linewidth=2, style=plot.style_line)
 
+// Volume & Average Volume Distance
+avgVolume = ta.sma(volume, 20)
+volumeDiff = volume - avgVolume
+volumeDiffPercent = (volumeDiff / avgVolume) * 100
+volumeCircle = volumeDiff < 0 ? "🔴" : volumeDiffPercent <= 10 ? "🟡" : "🟢"
+volumeDiffArrow = (volumeDiff > volumeDiff[1] and volumeDiff > 0) or (volumeDiff < volumeDiff[1] and volumeDiff < 0) ? "⬆️" : (volumeDiff != volumeDiff[1] ? "⬇️" : "")
+volumeStatus = "Volume Δ: " + volume_formatter(volumeDiff) + " (" + str.tostring(volumeDiffPercent, "#.##") + "%) " + volumeCircle + " " + volumeDiffArrow
+
+
 // === Earnings
 earningsTime = earnings.future_time
 earningsDateStr = ""
@@ -88,10 +114,57 @@ if not na(earningsTime) and showRemainingDaysInput
     timediff = math.max(int(math.round((earningsUTC - todayUTC) / 86400000)), 0)
     earningsDateStr := str.tostring(timediff) + " days remaining"
 
+
+// === POPUP ALERT (Red Zone or below Stop)
+var label slLabel = na
+if showStopLoss and barstate.islast and (slEmoji == "🔴" or close <= stopLoss)
+    slLabel := label.new(x=bar_index + 1, y=stopLoss, text=(close <= stopLoss ? "SELL" : str.tostring(stopLoss, "#.##")), style=label.style_label_left, color=color.new(color.red, 60), textcolor=color.white, size=size.small)
+
+
 // === RSI
 rsiValue = ta.rsi(close, 14)
 rsiEmoji = rsiValue > 70 ? "🔴" : rsiValue < 30 ? "🔴" : "🟢"
 rsiTrend = rsiValue > rsiValue[1] ? "⬆️" : rsiValue < rsiValue[1] ? "⬇️" : "⏸️"
+
+// === CCI (14), source: hlc3
+cci = ta.cci(hlc3, 14)
+
+// Determine CCI trend direction (looking at last 3-5 bars for trend confirmation)
+cciTrendDirection = ta.sma(cci, 3) > ta.sma(cci[3], 3) ? "up" : "down"
+
+// CCI interpretation based on trend direction
+cciInterpretation = ""
+cciColor = ""
+
+if cciTrendDirection == "down"
+    if cci > 100
+        cciInterpretation := "Overbought 🔴"
+        cciColor := "🔴"
+    else if cci > 0 and cci <= 100
+        cciInterpretation := "Negative Momentum 🟡"
+        cciColor := "🟡"
+    else if cci >= -100 and cci < 0
+        cciInterpretation := "2-4 Days Down 🟠"
+        cciColor := "🟠"
+    else if cci < -100
+        cciInterpretation := "Oversold 🔴"
+        cciColor := "🔴"
+
+else if cciTrendDirection == "up"
+    if cci > 100
+        cciInterpretation := "Overbought 🔴"
+        cciColor := "🔴"
+    else if cci > 0 and cci <= 100
+        cciInterpretation := "2-4 Days Up 🟢"
+        cciColor := "🟢"
+    else if cci >= -100 and cci < 0
+        cciInterpretation := "Building Momentum 🟡"
+        cciColor := "🟡"
+    else if cci < -100
+        cciInterpretation := "Oversold 🔴"
+        cciColor := "🔴"
+
+cciTrend = cci > cci[1] ? "⬆️" : cci < cci[1] ? "⬇️" : "⏸️"
 
 // === Volume Change %
 volLookbackBars = volumeLookback == "3 Days" ? 3 : volumeLookback == "1 Week" ? 5 : volumeLookback == "1 Month" ? 21 : 1
@@ -206,7 +279,6 @@ if showPivotLabels
         label.new(x=bar_index - pivotStrength, y=pl, text=str.tostring(pl, "#.##"), style=label.style_label_up, yloc=yloc.belowbar, color=color.new(color.white, 100), textcolor=color.white, size=size.small)
 
 // === Stop Loss Label
-var label slLabel = na
 if showStopLoss and barstate.islast
     if not na(slLabel)
         label.delete(slLabel)
@@ -311,7 +383,10 @@ if barstate.islast
     table.cell(sec, 0, rowIndex, "RSI (14): " + str.tostring(rsiValue, "#.##") + " " + rsiEmoji + " " + rsiTrend, text_color = txtCol, text_size = sizer, text_halign=text.align_left)
     rowIndex += 1
 
-    table.cell(sec, 0, rowIndex, "Volume Δ: " + str.tostring(volChange, "#.##") + "% " + volEmoji, text_color = txtCol, text_size = sizer, text_halign=text.align_left)
+    table.cell(sec, 0, rowIndex, "CCI (14): " + str.tostring(cci, "#.##") + " " + cciInterpretation + " " + cciTrend, text_color = txtCol, text_size = sizer, text_halign=text.align_left)
+    rowIndex += 1
+
+    table.cell(sec, 0, rowIndex, volumeStatus, text_color = txtCol, text_size = sizer, text_halign=text.align_left)
     rowIndex += 1
 
     table.cell(sec, 0, rowIndex, trendSummary, text_color = txtCol, text_size = sizer, text_halign=text.align_left)
